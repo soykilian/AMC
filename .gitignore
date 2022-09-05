@@ -1,2 +1,3 @@
 #ignore dataset
 *.mat
+*.DS_Store
