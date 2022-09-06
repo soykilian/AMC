@@ -10,10 +10,12 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 import sklearn, json
 import scipy.io as io
 from typing import Any, Dict
-from includes.clr_callback import *
-import matplotlib.pyplot as plt
-
+import sys
 path = '/home/maria/'
+sys.path.insert(0, path + "AMC/includes")
+from clr_callback import *
+#import matplotlib.pyplot as plt
+
 dataset_path = path + 'Dataset/'
 
 with h5py.File(dataset_path +'X_train.mat', 'r') as f:
