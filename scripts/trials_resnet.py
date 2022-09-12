@@ -1,6 +1,7 @@
 import h5py
 import numpy as np
 import tensorflow as tf
+import tensorflow.keras as keras
 from tensorflow.keras import layers, optimizers
 from tensorflow.keras.layers import Input, Dense, Activation, ZeroPadding2D, BatchNormalization, Flatten, Add, Conv1D,Convolution2D, Bidirectional, LSTM, GRU, AlphaDropout, MaxPooling1D
 from tensorflow.keras.layers import MaxPooling2D, Dropout
@@ -80,7 +81,13 @@ def res_stack(x, f):
 def ResNet(input_shape):
     X_input = Input(input_shape)
     ####
-    x = res_stack(X_input, 32)
+    attention_block = tf.keras.layers.MultiHeadAttention(num_heads=2, key_dim=2)
+    x = attention_block(X_input, X_input)
+    x = keras.layers.LayerNormalization(epsilon=1e-6)(x + X_input)
+    x = keras.layers.Conv1D(filters=2, kernel_size=5, padding="same",
+            activation='relu')(x)
+    x = keras.layers.Dropout(0.1)(x)
+    x = keras.layers.LayerNormalization(epsilon=1e-6)(x + X_input)
     x = res_stack(x, 32)
     x = res_stack(x, 32)
     x = res_stack(x, 32)
@@ -101,24 +108,25 @@ def ResNet(input_shape):
     model.summary()
     return model
 
-
 model = ResNet(X_train.shape[1:])
-output_path = path + 'Results/models'
-clr_triangular = CyclicLR(mode='triangular', base_lr=1e-7, max_lr=1e-3, step_size= 4 * (X_train.shape[0] // 500))
-c = [clr_triangular, ModelCheckpoint(filepath= output_path +'best_model.h5', monitor='val_loss', save_best_only=True)]
+output_path = path + 'Results_2'
+clr_triangular = CyclicLR(mode='triangular', base_lr=1e-7, max_lr=1e-3,
+        step_size= 4 * (X_train.shape[0] // 256))
+c = [clr_triangular, ModelCheckpoint(filepath= output_path +'/best_model.h5', monitor='val_loss', save_best_only=True)]
 model.compile(optimizer=optimizers.Adam(1e-7), loss='categorical_crossentropy', metrics=['accuracy'])
+
 
 Train = True
 if Train:
-    history = model.fit(X_train, Y_train, epochs = 300, batch_size = 500, callbacks = c, validation_data=(X_test, Y_test))
-    with open(output_path +'history_rnn.json', 'w') as f:
+    history = model.fit(X_train, Y_train, epochs = 300, batch_size = 256, callbacks = c, validation_data=(X_test, Y_test))
+    with open(output_path +'/history_rnn.json', 'w') as f:
         json.dump(history.history, f)
     model_json = model.to_json()
-    with open(output_path +'model_rnn.json', "w") as json_file:
+    with open(output_path +'/model_rnn.json', "w") as json_file:
         json_file.write(model_json)
 else:
-    model.load_weights(output_path +'best_model.h5')
-    with open(output_path +'history_rnn.json', 'r') as f:
+    model.load_weights(output_path +'/best_model.h5')
+    with open(output_path +'/history_rnn.json', 'r') as f:
         history = json.load(f)
 
 
@@ -129,7 +137,7 @@ plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['test', 'val'])
 plt.show()
-plt.savefig(path+ '\graphs\model_loss.pdf')
+plt.savefig(path+ '/graphs/model_loss.pdf')
 
 
 def getConfusionMatrixPlot(true_labels, predicted_labels,title):
@@ -195,7 +203,7 @@ for snr in snrs:
     plt.figure(figsize=(width, height))
     plt = getConfusionMatrixPlot(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat, 1),title="ResNet Confusion Matrix (SNR=%d)"%(snr))
     plt.gcf().subplots_adjust(bottom=0.15)
-    plt.savefig(output_path + '\graphs\confmat_'+str(snr)+'.pdf')
+    plt.savefig(output_path + '/graphs/confmat_'+str(snr)+'.pdf')
     conf = np.zeros([len(classes),len(classes)])
     confnorm = np.zeros([len(classes),len(classes)])
     for i in range(0,test_X_i.shape[0]):
@@ -216,4 +224,4 @@ plt.plot(snrs, list(map(lambda x: acc[x], snrs)))
 plt.xlabel("Signal to Noise Ratio")
 plt.ylabel("Classification Accuracy")
 plt.title("Classification Accuracy on Radar Dataset")
-plt.savefig(output_path + '\graphs\clas_acc.pdf')
+plt.savefig(output_path + '/graphs/clas_acc.pdf')

@@ -47,7 +47,7 @@ classes = ['LFM', '2FSK', '4FSK', '8FSK', 'Costas', '2PSK', '4PSK', '8PSK', 'Bar
 
 #/***********************************************************/
 # INNERPHASE & QUADRATURE --> MODULE & PHASE
-# Change in case of
+# Change in c
 AF = False
 if AF:
 
@@ -115,20 +115,32 @@ ACTIVATION = 'selu'
 HIDDEN = 32
 INITIALIZER = 'lecun_normal'
 
-ACTIVATION = 'selu'
-HIDDEN = 32
-INITIALIZER = 'lecun_normal'
-
 def ModelTrunk(input_shape : int):
     X_input = tf.keras.Input(input_shape)
+    conv = Conv1D(2, 5, strides=1, activation=ACTIVATION, padding="same",
+            data_format='channels_last')(X_input)
+    conv = BatchNormalization()(conv)
+    conv = Conv1D(2, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(conv)
+    conv = BatchNormalization()(conv)
+    conv = Conv1D(2, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(conv)
+    conv = BatchNormalization()(conv)
+    conv = MaxPooling1D(2)(conv)
+    conv = BatchNormalization()(conv)
+    conv =Conv1D(2, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(conv)
+    conv = BatchNormalization()(conv)
+    conv = Conv1D(2, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(conv)
+    conv = BatchNormalization()(conv)
+    conv = keras.layers.MaxPooling1D(2)(conv)
+    conv = BatchNormalization()(conv)
     attention_block = tf.keras.layers.MultiHeadAttention(num_heads=2, key_dim=2)
-    x = attention_block(X_input, X_input)
-    x = keras.layers.LayerNormalization(epsilon=1e-6)(x + X_input)
+    x = attention_block(conv, conv)
+    x = keras.layers.LayerNormalization(epsilon=1e-6)(x + conv)
     x = keras.layers.Conv1D(filters=2, kernel_size=5, padding="same",
             activation='relu')(x)
     x = keras.layers.Dropout(0.1)(x)
-    x = keras.layers.LayerNormalization(epsilon=1e-6)(x + X_input)
+    x = keras.layers.LayerNormalization(epsilon=1e-6)(x + conv)
     
+    """
     conv = Conv1D(HIDDEN, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(x)
     #print("------------------------------CONV--------------------------------------------")
     conv = Conv1D(HIDDEN, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(conv)
@@ -136,6 +148,7 @@ def ModelTrunk(input_shape : int):
     conv =Conv1D(HIDDEN, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(conv)
     conv = Conv1D(HIDDEN, 5, strides=1, activation=ACTIVATION, padding="same", data_format='channels_last')(conv)
     conv = keras.layers.MaxPooling1D(2)(conv)
+    """
     # recurrent with attention, this generates sequences
     """
     recurrent_forward = LSTM(HIDDEN, return_sequences=True, name= 'lstm0')(conv)
@@ -148,9 +161,7 @@ def ModelTrunk(input_shape : int):
     # Try wth 3 attention blocks at least for improvement
     x = MaxPooling1D(2)(x)
     x = Flatten()(x)
-    x = Dense(512, activation='selu')(x)
-    x = AlphaDropout(0.6)(x)
-    x = Dense(256, activation='selu')(x)
+    x = Dense(256, activation=ACTIVATION)(x)
     x = AlphaDropout(0.6)(x)
     x = Dense(23, activation='softmax')(x)
     model = Model(inputs = X_input, outputs = x)
@@ -161,14 +172,14 @@ def ModelTrunk(input_shape : int):
 
 model = ModelTrunk(X_train.shape[1:])
 model.compile(optimizer=optimizers.Adam(1e-6), loss='categorical_crossentropy', metrics=['accuracy'])
-output_path = path + 'Results/model_attention'
+output_path = path + 'Results_attention/'
 clr_triangular = CyclicLR(mode='triangular', base_lr=1e-6, max_lr=1e-3, step_size= 4 * (X_train.shape[0] // 256))
-c=[clr_triangular,ModelCheckpoint(filepath= output_path +'_best_model.h5', monitor='val_loss', save_best_only=True)]
-history = model.fit(X_train, Y_train, epochs = 1000, batch_size = 256, callbacks = c, validation_data=(X_test, Y_test))
-with open(output_path +'_history_rnn.json', 'w') as f:
+c=[clr_triangular,ModelCheckpoint(filepath= output_path +'best_model.h5', monitor='val_loss', save_best_only=True)]
+history = model.fit(X_train, Y_train, epochs = 500, batch_size = 256, callbacks = c, validation_data=(X_test, Y_test))
+with open(output_path +"history_rnn.json", 'w') as f:
     json.dump(history.history, f)
 model_json = model.to_json()
-with open(output_path +'_model_rnn.json', "w") as json_file:
+with open(output_path +"model_rnn.json", 'w') as json_file:
     json_file.write(model_json)
 
 model.load_weights(output_path + 'best_model.h5')
@@ -183,7 +194,7 @@ plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['test', 'val'])
 plt.show()
-plt.savefig(output_path + '\graphs\model_loss.pdf')
+plt.savefig(output_path + "graphs/model_loss.pdf")
 
 
 # In[ ]:
@@ -251,7 +262,7 @@ for snr in snrs:
     plt = getConfusionMatrixPlot(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat, 1),
                                  title="ResNet Confusion Matrix (SNR=%d)" % (snr))
     plt.gcf().subplots_adjust(bottom=0.15)
-    plt.savefig(output_path + '\graphs\confmat_' + str(snr) + '.pdf')
+    plt.savefig(output_path + "graphs/confmat_" + str(snr) + '.pdf')
     conf = np.zeros([len(classes), len(classes)])
     confnorm = np.zeros([len(classes), len(classes)])
     for i in range(0, test_X_i.shape[0]):
@@ -278,5 +289,5 @@ plt.plot(snrs, list(map(lambda x: acc[x], snrs)))
 plt.xlabel("Signal to Noise Ratio")
 plt.ylabel("Classification Accuracy")
 plt.title("Classification Accuracy on Radar Dataset")
-plt.savefig(output_path + '\graphs\clas_acc.pdf')
+plt.savefig(output_path + "graphs/clas_acc.pdf")
 
