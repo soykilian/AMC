@@ -143,39 +143,26 @@ def RecComModel(input_shape):
 model = RecComModel(X_train.shape[1:])
 
 
-# In[43]:
+
+output_path = path + 'Results_lstm'
+clr_triangular = CyclicLR(mode='triangular', base_lr=1e-7, max_lr=1e-3,
+        step_size= 4 * (X_train.shape[0] // 256))
+c = [clr_triangular, ModelCheckpoint(filepath= output_path +'/best_model.h5', monitor='val_loss', save_best_only=True)]
+model.compile(optimizer=optimizers.Adam(1e-7), loss='categorical_crossentropy', metrics=['accuracy'])
 
 
-output_path = '../Results/Radar_RNN/interpolation_orthogonal/normal_lr/'
-#clr_triangular = CyclicLR(mode='triangular', base_lr=1e-7, max_lr=1e-3, step_size= 4 * (X_train.shape[0] // 500))
-c=[ModelCheckpoint(filepath= output_path +'best_model.h5', monitor='val_loss', save_best_only=True)]
-model.compile(optimizer=optimizers.Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
 Train = True
-
 if Train:
-    #c = [EarlyStopping(monitor='val_loss', patience=20),
-    #            ModelCheckpoint(filepath= output_path +'best_model.h5', monitor='val_loss', save_best_only=True)]
-
-    history = model.fit(X_train, Y_train, epochs = 500, batch_size = 500, callbacks = c, validation_data=(X_test, Y_test))
-
-    with open(output_path +'history_rnn.json', 'w') as f:
+    history = model.fit(X_train, Y_train, epochs = 300, batch_size = 256, callbacks = c, validation_data=(X_test, Y_test))
+    with open(output_path +'/history_rnn.json', 'w') as f:
         json.dump(history.history, f)
     model_json = model.to_json()
-    with open(output_path +'model_rnn.json', "w") as json_file:
+    with open(output_path +'/model_rnn.json', "w") as json_file:
         json_file.write(model_json)
 else:
-    model.load_weights(output_path +'best_model.h5')
-    with open(output_path +'history_rnn.json', 'r') as f:
-            history = json.load(f)
-
-
-# In[33]:
-
-
-model.load_weights(output_path +'best_model.h5')
-
-
-# In[ ]:
+    model.load_weights(output_path +'/best_model.h5')
+    with open(output_path +'/history_rnn.json', 'r') as f:
+        history = json.load(f)
 
 
 plt.plot(history.history['loss'])
@@ -185,10 +172,7 @@ plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['test', 'val'])
 plt.show()
-plt.savefig(output_path + '\graphs\model_loss.pdf')
-
-
-# In[ ]:
+plt.savefig(path+ '/graphs/model_loss.pdf')
 
 
 def getConfusionMatrixPlot(true_labels, predicted_labels,title):
@@ -231,9 +215,6 @@ def getConfusionMatrixPlot(true_labels, predicted_labels,title):
     return plt
 
 
-# In[ ]:
-
-
 def getFontColor(value):
     if np.isnan(value):
         return "black"
@@ -242,7 +223,6 @@ def getFontColor(value):
     else:
         return "white"
 
-# In[ ]:
 
 acc={}
 snrs = [-12,-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20]
@@ -256,9 +236,9 @@ for snr in snrs:
     width = 18
     height = width / 1.618
     plt.figure(figsize=(width, height))
-    plt = getConfusionMatrixPlot(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat, 1),title="RecNet Confusion Matrix (SNR=%d)"%(snr))
+    plt = getConfusionMatrixPlot(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat, 1),title="ResNet Confusion Matrix (SNR=%d)"%(snr))
     plt.gcf().subplots_adjust(bottom=0.15)
-    plt.savefig(output_path + '\graphs\confmat_'+str(snr)+'.pdf')
+    plt.savefig(output_path + '/graphs/confmat_'+str(snr)+'.pdf')
     conf = np.zeros([len(classes),len(classes)])
     confnorm = np.zeros([len(classes),len(classes)])
     for i in range(0,test_X_i.shape[0]):
@@ -272,18 +252,11 @@ for snr in snrs:
     ncor = np.sum(conf) - cor
     print("Overall Accuracy: ", cor / (cor+ncor))
     acc[snr] = 1.0*cor/(cor+ncor)
-#print(acc)
-
-
-# In[ ]:
-
-
-with open(output_path +'acc.json', 'w') as f:
+    with open(output_path + 'acc.json', 'w') as f:
         json.dump(acc, f)
 
 plt.plot(snrs, list(map(lambda x: acc[x], snrs)))
 plt.xlabel("Signal to Noise Ratio")
 plt.ylabel("Classification Accuracy")
 plt.title("Classification Accuracy on Radar Dataset")
-plt.savefig(output_path + '\graphs\clas_acc.pdf')
-
+plt.savefig(output_path + '/graphs/clas_acc.pdf')
