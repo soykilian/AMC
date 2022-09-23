@@ -1,81 +1,57 @@
-import numpy as np
-from tensorflow.keras import layers
-import tensorflow.keras.backend as K
-from tensorflow.keras import optimizers
-from tensorflow.keras.layers import Input, Dense, Activation, ZeroPadding2D, BatchNormalization, Flatten, Conv2D, Conv1D, Convolution2D, Bidirectional, LSTM, GRU, CuDNNLSTM
-from tensorflow.keras.layers import AveragePooling2D, MaxPooling2D, Dropout, GlobalMaxPooling2D, GlobalAveragePooling2D, Masking
-from tensorflow.keras.models import Model
-from tensorflow.keras.preprocessing import image
-from keras.utils import layer_utils
-from keras.utils.data_utils import get_file
-from keras.applications.imagenet_utils import preprocess_input
-import pydot
-from IPython.display import SVG
-from keras.utils.vis_utils import model_to_dot
-from tensorflow.keras.utils import plot_model
-
-import tensorflow as tf
-from tensorflow.keras import backend as K
-K.set_image_data_format('channels_last')
-import matplotlib.pyplot as plt
-from matplotlib.pyplot import imshow
-from sklearn.model_selection import train_test_split
-from sklearn.utils import shuffle
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-import json
-
-import scipy.signal as sc
-from sklearn.metrics import confusion_matrix
-import cmath
-import pickle
-import scipy.io as sio
 import h5py
-
-from tensorflow.keras.callbacks import *
+import numpy as np
 import sys
-# insert at 1, 0 is the script path (or '' in REPL)
-sys.path.insert(1, '../../CLR')
+import tensorflow as tf
+from tensorflow.keras import layers, optimizers, activations, initializers,regularizers, constraints from tensorflow.keras.layers import Input, Dense, Activation, BatchNormalization, Flatten, Conv1D,Convolution2D, MaxPooling1D, AlphaDropout,Layer, LSTM, Layer
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.models import Model
+from sklearn.metrics import confusion_matrix
+from tensorflow.keras import layers
+#from tensorflow_addons.layers import MultiHeadAttention
+import numpy as np import tensorflow.keras as keras from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint import sklearn, json import scipy.io as io from typing import Any, Dict
+import logging, sys
+from attention import Attention
+logging.disable(sys.maxsize)
+path = '/home/maria/'
+sys.path.insert(0, path + "AMC/includes")
 from clr_callback import *
+import matplotlib.pyplot as plt
 
-
-# In[2]:
-#from keras.backend.tensorflow_backend import set_session
 
 #config = tf.ConfigProto()
 #config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
 #sess = tf.Session(config=config)
 
 classes = ['LFM','2FSK','4FSK','8FSK', 'Costas','2PSK','4PSK','8PSK','Barker','Huffman','Frank','P1','P2','P3','P4','Px','Zadoff-Chu','T1','T2','T3','T4','NM','ruido']
+#classes = ['LFM', 'BFSK', 'BPSK', 'NM', 'LFM_ESC', 'SIN', 'BASK']
 dt = np.dtype(float)
-dataset_path = '/mnt/Data/gmr/Dataset/'
+dataset_path = path + 'Dataset_trials/'
 
-with h5py.File(dataset_path + 'X_train.mat', 'r') as f:
+with h5py.File(dataset_path +'X_train.mat', 'r') as f:
     X_train = np.array(f['X_train']).T
-with h5py.File(dataset_path + 'X_test.mat', 'r') as f:
+with h5py.File(dataset_path +'X_test.mat', 'r') as f:
     X_test = np.array(f['X_test']).T
-Y_train = sio.loadmat(dataset_path + 'Y_train.mat')
+with h5py.File(dataset_path +'X_val.mat', 'r') as f:
+    X_val = np.array(f['X_val']).T
+lbl_train = io.loadmat(dataset_path + 'lbl_train.mat')['lbl_train']
+lbl_test = io.loadmat(dataset_path + 'lbl_test.mat')['lbl_test']
+lbl_val = io.loadmat(dataset_path + 'lbl_val.mat')['lbl_val']
+
+Y_val = io.loadmat(dataset_path + 'Y_val.mat')
+Y_val = Y_val['Y_val']
+Y_train = io.loadmat(dataset_path + 'Y_train.mat')
 Y_train = Y_train['Y_train']
-Y_test = sio.loadmat(dataset_path + 'Y_test.mat')
+Y_test = io.loadmat(dataset_path + 'Y_test.mat')
 Y_test = Y_test['Y_test']
-lbl_train = sio.loadmat(dataset_path + 'lbl_train.mat')
-lbl_train = lbl_train['lbl_train']
-lbl_test = sio.loadmat(dataset_path + 'lbl_test.mat')
-lbl_test = lbl_test['lbl_test']
 
-
-# In[3]:
-
-
-print("X train shape: ", X_train.shape)
 print("X test shape: ", X_test.shape)
+print("X val shape: ", X_val.shape)
 print("Y train shape: ", Y_train.shape)
+print("Y val shape: ", Y_val.shape)
 print("Y test shape: ", Y_test.shape)
 print("Label train shape: ", lbl_train.shape)
+print("Label val shape: ", lbl_val.shape)
 print("Label test shape: ", lbl_test.shape)
-
-
-# In[4]:
-
 
 AP = False
 
@@ -100,60 +76,42 @@ if AP:
     del I_te
     del Q_te
     del X_te
-# In[5]:
-print("X train shape: ", X_train.shape)
-print("X test shape: ", X_test.shape)
-print("Y train shape: ", Y_train.shape)
-print("Y test shape: ", Y_test.shape)
-print("Label train shape: ", lbl_train.shape)
-print("Label test shape: ", lbl_test.shape)
-# In[6]:
 
-
-np.random.seed(2020)
-
-X_train, Y_train, lbl_train = shuffle(X_train[:], Y_train[:], lbl_train[:], random_state = 2020)
-X_test, Y_test, lbl_test = shuffle(X_test[:], Y_test[:], lbl_test[:], random_state = 2020)
-
-class attention(Layer):
-    def __init__(self, **kwargs):
-        super(attention, self).__init__(**kwargs)
-    def build(self, input_shape):
-        self.W = self.add_weight(name = 'attention_weight', shape=input_shape, initializer='random_normal', trainable=True)
-        self.b = self.add_weight(name = 'attention_bias', shape=input_shape, initializer='zeros', trainable=True)
-        super(attention, self).build(input_shape)
-    def call(self, x):
-        a = K.tanh(K.dot(x, self.W) + self.b)
-        a = K.squeeze(a, axis=-1)
-        alpha = K.softmax(a)
-        alpha = K.expand_dims(alpha, axis=-1)
-        a = alpha * x
-        a = K.sum(a, axis=1)
-        return a
+np.random.seed(2022)
+X_train, Y_train, lbl_train = sklearn.utils.shuffle(X_train[:], Y_train[:], lbl_train[:], random_state=2022)
+X_val, Y_val, lbl_val = sklearn.utils.shuffle(X_val[:], Y_val[:], lbl_val[:], random_state=2022)
+X_test, Y_test, lbl_test = sklearn.utils.shuffle(X_test[:], Y_test[:], lbl_test[:], random_state=2022)
 
 def RecComModel(input_shape):
     x_input = Input(input_shape)
     x = LSTM(128, return_sequences=True, name='lstm0')(x_input)
-    x = LSTM(128, return_sequences=False, name='lstm1')(x)
-    x = attention()(x)
+    x = LSTM(128, return_sequences=True, name='lstm1')(x)
+    x = LSTM(128, return_sequences=False, name='lstm2')(x)
+    #attention_block = tf.keras.layers.MultiHeadAttention(num_heads=2,key_dim=128)
+    #x = attention_block(query=x, key=x, value=x, training=True)
+    #x = MaxPooling1D(4)(x)
+    #x = Dense(, activation='selu')(x)
+    #x = AlphaDropout(0.6)(x)
+    #x = Flatten()(x)
     x = Dense(23, activation='softmax', name='fc0')(x)
-    model = Model(inputs= x_input, outputs=x)
+    #x = layers.MultiHeadAttention(num_heads=2, key_dim=2)(x[-1], x[-1])
+    #x = layers.MultiHeadAttention(num_heads=2, key_dim=2)(x[-1], x[-1])
+    model = Model(inputs = x_input, outputs = x)
     model.summary()
     return model
+
+
 model = RecComModel(X_train.shape[1:])
-
-
-
 output_path = path + 'Results_lstm'
 clr_triangular = CyclicLR(mode='triangular', base_lr=1e-7, max_lr=1e-3,
         step_size= 4 * (X_train.shape[0] // 256))
 c = [clr_triangular, ModelCheckpoint(filepath= output_path +'/best_model.h5', monitor='val_loss', save_best_only=True)]
-model.compile(optimizer=optimizers.Adam(1e-7), loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(optimizer=optimizers.Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
 
 
 Train = True
 if Train:
-    history = model.fit(X_train, Y_train, epochs = 300, batch_size = 256, callbacks = c, validation_data=(X_test, Y_test))
+    history = model.fit(X_train, Y_train, epochs = 500, batch_size = 256, callbacks = c, validation_data=(X_val, Y_val))
     with open(output_path +'/history_rnn.json', 'w') as f:
         json.dump(history.history, f)
     model_json = model.to_json()
@@ -172,7 +130,7 @@ plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['test', 'val'])
 plt.show()
-plt.savefig(path+ '/graphs/model_loss.pdf')
+plt.savefig(output_path+ '/graphs/model_loss.pdf')
 
 
 def getConfusionMatrixPlot(true_labels, predicted_labels,title):
@@ -236,7 +194,8 @@ for snr in snrs:
     width = 18
     height = width / 1.618
     plt.figure(figsize=(width, height))
-    plt = getConfusionMatrixPlot(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat, 1),title="ResNet Confusion Matrix (SNR=%d)"%(snr))
+    plt = getConfusionMatrixPlot(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat,
+        1),title="Attention Confusion Matrix (SNR=%d)"%(snr))
     plt.gcf().subplots_adjust(bottom=0.15)
     plt.savefig(output_path + '/graphs/confmat_'+str(snr)+'.pdf')
     conf = np.zeros([len(classes),len(classes)])
@@ -249,10 +208,14 @@ for snr in snrs:
         confnorm[i,:] = conf[i,:] / np.sum(conf[i,:])
     plt.figure()
     cor = np.sum(np.diag(conf))
+    for i in range(0,len(classes)):
+        confnorm[i,:] = conf[i,:] / np.sum(conf[i,:])
+    plt.figure()
+    cor = np.sum(np.diag(conf))
     ncor = np.sum(conf) - cor
     print("Overall Accuracy: ", cor / (cor+ncor))
     acc[snr] = 1.0*cor/(cor+ncor)
-    with open(output_path + 'acc.json', 'w') as f:
+    with open(output_path + '/acc.json', 'w') as f:
         json.dump(acc, f)
 
 plt.plot(snrs, list(map(lambda x: acc[x], snrs)))

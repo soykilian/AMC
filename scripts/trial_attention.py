@@ -175,7 +175,7 @@ model.compile(optimizer=optimizers.Adam(1e-6), loss='categorical_crossentropy', 
 output_path = path + 'Results_attention/'
 clr_triangular = CyclicLR(mode='triangular', base_lr=1e-6, max_lr=1e-3, step_size= 4 * (X_train.shape[0] // 256))
 c=[clr_triangular,ModelCheckpoint(filepath= output_path +'best_model.h5', monitor='val_loss', save_best_only=True)]
-history = model.fit(X_train, Y_train, epochs = 500, batch_size = 256, callbacks = c, validation_data=(X_test, Y_test))
+history = model.fit(X_train, Y_train, epochs = 20, batch_size = 256, callbacks = c, validation_data=(X_test, Y_test))
 with open(output_path +"history_rnn.json", 'w') as f:
     json.dump(history.history, f)
 model_json = model.to_json()
