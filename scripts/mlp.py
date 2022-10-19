@@ -88,18 +88,167 @@ X_train, Y_train, lbl_train = sklearn.utils.shuffle(X_train[:], Y_train[:], lbl_
 X_val, Y_val, lbl_val = sklearn.utils.shuffle(X_val[:], Y_val[:], lbl_val[:], random_state=2022)
 X_test, Y_test, lbl_test = sklearn.utils.shuffle(X_test[:], Y_test[:], lbl_test[:], random_state=2022)
 
+def serialize(X):
+    X_serialized = np.zeros((X.shape[0], 2048))
+    for i in range(X.shape[0]):
+        X_serialized[i] = np.concatenate(X[i], axis=None)
+    return X_serialized
+
+X_train_ser = serialize(X_train)
+X_val_ser = serialize(X_val)
+X_test_ser = serialize(X_test)
+
 def DenseNet(input_shape):
     x_input = Input(input_shape)
-    x_input = keras.backend.transpose(x_input[-1])
-    x_input = Input((x_input[0], x_input[1]))
-    x = Dense(512,input_shape=(input_shape[1], input_shape[0]),name ='dense_0')(x_input)
-    x = Dense(256, name ='dense_1')(x)
-    x = Dense(128, name ='dense_2')(x)
-    x = Dense(7, activation='softmax',name ='classification')(x)
+    #x = Dense(512,name ='dense_0')(x_input)
+    #x = Dense(128, name ='dense_1')(x)
+    #x = Dense(64, name ='dense_2')(x)
+    #x = Dense(7, activation='softmax',name ='classification')(x)
+    clf = sklearn.neural_network.MLPClassifier(hidden_layer_sizes=256,
+            solver='adam', batch_size=200, activation = 'softmax')
     model = Model(inputs=x_input, outputs=x)
     model.summary()
     return model
 
-model = DenseNet(X_train.shape[1:])
+#model = DenseNet(X_train_ser.shape[1:])
+
+mlp = sklearn.neural_network.MLPClassifier(hidden_layer_sizes=256, solver='adam', batch_size=200, activation = 'softmax')
+mlp.fit(X_train_ser, Y_train)
+
+#output_path = path + 'Results_dense'
+y_test_pred = mlp.predict(X_test_ser)
+
+#clr_triangular = CyclicLR(mode='triangular', base_lr=1e-7, max_lr=1e-3,
+        step_size= 4 * (X_train.shape[0] // 256))
+#c = [clr_triangular, ModelCheckpoint(filepath= output_path +'/best_model.h5', monitor='val_loss', save_best_only=True)]
+#model.compile(optimizer=optimizers.Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
 
 
+Train = True
+if Train:
+    history = model.fit(X_train_ser, Y_train, epochs = 500, batch_size = 256,
+            callbacks = c, validation_data=(X_val_ser, Y_val))
+    with open(output_path +'/history_rnn.json', 'w') as f:
+        json.dump(history.history, f)
+    model_json = model.to_json()
+    with open(output_path +'/model_rnn.json', "w") as json_file:
+        json_file.write(model_json)
+else:
+    model.load_weights(output_path +'/best_model.h5')
+    with open(output_path +'/history_rnn.json', 'r') as f:
+        history = json.load(f)
+
+
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['test', 'val'])
+plt.show()
+plt.savefig(output_path+ '/graphs/model_loss.pdf')
+
+
+def getConfusionMatrixPlot(true_labels, predicted_labels,title):
+    # Compute confusion matrix
+    cm = confusion_matrix(true_labels, predicted_labels)
+    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = np.nan_to_num(cm_norm)
+    cm = np.round(cm_norm,2)
+
+    # create figure
+    width = 18
+    height = width / 1.618
+    fig = plt.figure(figsize=(width, height))
+    plt.clf()
+    ax = fig.add_subplot(111)
+    ax.set_aspect(1)
+    ax.set_xlabel('Predicted label')
+    ax.set_ylabel('True label')
+    res = ax.imshow(cm, cmap=plt.cm.binary,
+                    interpolation='nearest', vmin=0, vmax=1)
+
+    # add color bar
+    plt.colorbar(res)
+
+    # annotate confusion entries
+    width = len(cm)
+    height = len(cm[0])
+
+    for x in range(width):
+        for y in range(height):
+            ax.annotate(str(cm[x][y]), xy=(y, x), horizontalalignment='center',
+                        verticalalignment='center', color=getFontColor(cm[x][y]))
+
+    # add genres as ticks
+    alphabet = classes
+    plt.xticks(range(width), alphabet[:width], rotation=30)
+    plt.yticks(range(height), alphabet[:height])
+    plt.title(title)
+    return plt
+
+
+def getFontColor(value):
+    if np.isnan(value):
+        return "black"
+    elif value < 0.2:
+        return "black"
+    else:
+        return "white"
+signal_class = {classes[0]: np.zeros(17), classes[1]: np.zeros(17),classes[2]:np.zeros(17), classes[3] : np.zeros(17), classes[4]: np.zeros(17), classes[5]:np.zeros(17), classes[6]:np.zeros(17)}
+acc={}
+snrs = [-12,-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20]
+
+for j,snr in enumerate(snrs):
+    test_SNRs = list(map(lambda x: lbl_test[x][1], range(0,X_test_ser.shape[0])))
+    test_X_i = X_test_ser[[i for i,x in enumerate(test_SNRs) if x==snr]]
+    test_Y_i = Y_test[[i for i,x in enumerate(test_SNRs) if x==snr]]
+
+    # estimate classes
+    test_Y_i_hat = np.array(model.predict(test_X_i))
+    cm = confusion_matrix(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat,1))
+    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = np.nan_to_num(cm_norm)
+    cm = np.round(cm_norm,2)
+    for i in range(len(classes)):
+        signal_class[classes[i]][j]= cm[i][i]
+    width = 18
+    height = width / 1.618
+    plt.figure(figsize=(width, height))
+    plt = getConfusionMatrixPlot(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat,
+        1),title="Attention Confusion Matrix (SNR=%d)"%(snr))
+    plt.gcf().subplots_adjust(bottom=0.15)
+    plt.savefig(output_path + '/graphs/confmat_'+str(snr)+'.pdf')
+    conf = np.zeros([len(classes),len(classes)])
+    confnorm = np.zeros([len(classes),len(classes)])
+    for i in range(0,test_X_i.shape[0]):
+        j = list(test_Y_i[i,:]).index(1)
+        k = int(np.argmax(test_Y_i_hat[i,:]))
+        conf[j,k] = conf[j,k] + 1
+    for i in range(0,len(classes)):
+        confnorm[i,:] = conf[i,:] / np.sum(conf[i,:])
+    plt.figure()
+    cor = np.sum(np.diag(conf))
+    for i in range(0,len(classes)):
+        confnorm[i,:] = conf[i,:] / np.sum(conf[i,:])
+    plt.figure()
+    cor = np.sum(np.diag(conf))
+    ncor = np.sum(conf) - cor
+    print("Overall Accuracy: ", cor / (cor+ncor))
+    acc[snr] = 1.0*cor/(cor+ncor)
+    with open(output_path + '/acc.json', 'w') as f:
+        json.dump(acc, f)
+
+plt.plot(snrs, list(map(lambda x: acc[x], snrs)))
+plt.xlabel("Signal to Noise Ratio")
+plt.ylabel("Classification Accuracy")
+plt.title("Classification Accuracy on Radar Dataset")
+plt.savefig(output_path + '/graphs/clas_acc.pdf')
+
+plt.figure()
+for i in range(len(classes)):
+    plt.plot(snrs, signal_class[classes[i]])
+plt.legend(classes)
+plt.xlabel("Signal to Noise Ratio")
+plt.ylabel("Classification Accuracy")
+plt.savefig(output_path+ '/graphs/signal_accuracy.pdf')
