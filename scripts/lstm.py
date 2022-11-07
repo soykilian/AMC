@@ -1,9 +1,8 @@
 import h5py
 import numpy as np
-import sys
 import tensorflow as tf
 from tensorflow.keras import layers, optimizers, activations, initializers,regularizers, constraints
-from tensorflow.keras.layers import Input, Dense, Activation, BatchNormalization, Flatten, Conv1D,Convolution2D, MaxPooling1D, AlphaDropout, Layer, LSTM, Layer
+from tensorflow.keras.layers import Input, Dense, Activation, BatchNormalization, Flatten, Conv1D,Convolution2D, MaxPooling1D, AlphaDropout,Layer, LSTM, Layer
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.models import Model
 from sklearn.metrics import confusion_matrix
@@ -17,6 +16,7 @@ import scipy.io as io
 from typing import Any, Dict
 import logging, sys
 from attention import Attention
+import keras_tuner
 logging.disable(sys.maxsize)
 path = '/home/maria/'
 sys.path.insert(0, path + "AMC/includes")
@@ -27,21 +27,16 @@ import matplotlib.pyplot as plt
 #config = tf.ConfigProto()
 #config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
 #sess = tf.Session(config=config)
+#classes = ['LFM','2FSK','4FSK','8FSK', 'Costas','2PSK','4PSK','8PSK','Barker','Huffman','Frank','P1','P2','P3','P4','Px','Zadoff-Chu','T1','T2','T3','T4','NM','ruido'] 
+classes = ['LFM', 'BFSK', 'BPSK', 'NM', 'LFM_ESC', 'SIN', 'EXP', 'BASK']
+dataset_path = path + 'Dataset_trials/corr/'
 
-#classes = ['LFM','2FSK','4FSK','8FSK', 'Costas','2PSK','4PSK','8PSK','Barker','Huffman','Frank','P1','P2','P3','P4','Px','Zadoff-Chu','T1','T2','T3','T4','NM','ruido']
-classes = ['LFM', 'BFSK', 'BPSK', 'NM', 'LFM_ESC', 'SIN', 'BASK']
-dt = np.dtype(float)
-dataset_path = path + 'Dataset/'
-
-with h5py.File(dataset_path +'X_train.mat', 'r') as f:
-    X_train = np.array(f['X_train']).T
-with h5py.File(dataset_path +'X_test.mat', 'r') as f:
-    X_test = np.array(f['X_test']).T
-with h5py.File(dataset_path +'X_val.mat', 'r') as f:
-    X_val = np.array(f['X_val']).T
-lbl_train = io.loadmat(dataset_path + 'lbl_train.mat')['lbl_train']
-lbl_test = io.loadmat(dataset_path + 'lbl_test.mat')['lbl_test']
-lbl_val = io.loadmat(dataset_path + 'lbl_val.mat')['lbl_val']
+with h5py.File(dataset_path +'Corr_train.mat', 'r') as f:
+    X_train = np.array(f['Corr_train']).T
+with h5py.File(dataset_path +'Corr_test.mat', 'r') as f:
+    X_test = np.array(f['Corr_test']).T
+with h5py.File(dataset_path +'Corr_val.mat', 'r') as f:
+    X_val = np.array(f['Corr_val']).T
 
 Y_val = io.loadmat(dataset_path + 'Y_val.mat')
 Y_val = Y_val['Y_val']
@@ -50,14 +45,12 @@ Y_train = Y_train['Y_train']
 Y_test = io.loadmat(dataset_path + 'Y_test.mat')
 Y_test = Y_test['Y_test']
 
+print("X train shape: ", X_train.shape)
 print("X test shape: ", X_test.shape)
 print("X val shape: ", X_val.shape)
 print("Y train shape: ", Y_train.shape)
 print("Y val shape: ", Y_val.shape)
 print("Y test shape: ", Y_test.shape)
-print("Label train shape: ", lbl_train.shape)
-print("Label val shape: ", lbl_val.shape)
-print("Label test shape: ", lbl_test.shape)
 
 AP = False
 
@@ -84,50 +77,35 @@ if AP:
     del X_te
 
 np.random.seed(2022)
-X_train, Y_train, lbl_train = sklearn.utils.shuffle(X_train[:], Y_train[:], lbl_train[:], random_state=2022)
-X_val, Y_val, lbl_val = sklearn.utils.shuffle(X_val[:], Y_val[:], lbl_val[:], random_state=2022)
-X_test, Y_test, lbl_test = sklearn.utils.shuffle(X_test[:], Y_test[:], lbl_test[:], random_state=2022)
+X_train, Y_train = sklearn.utils.shuffle(X_train[:], Y_train[:] , random_state=2022)
+X_val, Y_val = sklearn.utils.shuffle(X_val[:], Y_val[:], random_state=2022)
+X_test, Y_test = sklearn.utils.shuffle(X_test[:], Y_test[:], random_state=2022)
 
-def serialize(X):
-    X_serialized = np.zeros((X.shape[0], 2048))
-    for i in range(X.shape[0]):
-        X_serialized[i] = np.concatenate(X[i], axis=None)
-    return X_serialized
-
-X_train_ser = serialize(X_train)
-X_val_ser = serialize(X_val)
-X_test_ser = serialize(X_test)
-
-def DenseNet(input_shape):
-    x_input = Input(input_shape)
-    #x = Dense(512,name ='dense_0')(x_input)
-    #x = Dense(128, name ='dense_1')(x)
-    #x = Dense(64, name ='dense_2')(x)
-    #x = Dense(7, activation='softmax',name ='classification')(x)
-    clf = sklearn.neural_network.MLPClassifier(hidden_layer_sizes=256,
-            solver='adam', batch_size=200, activation = 'softmax')
-    model = Model(inputs=x_input, outputs=x)
+def RecComModel():
+    x_input = Input([1024,2])
+    x = LSTM(128, return_sequences=True, name='lstm0')(x_input)
+    x = LSTM(128, return_sequences=True, name='lstm1')(x)
+    x = LSTM(128, return_sequences=False, name='lstm2')(x)
+    x = Dense(8, activation='softmax', name='fc0')(x)
+    model = Model(inputs = x_input, outputs = x)
     model.summary()
     return model
 
-#model = DenseNet(X_train_ser.shape[1:])
 
-mlp = sklearn.neural_network.MLPClassifier(hidden_layer_sizes=256, solver='adam', batch_size=200, activation = 'softmax')
-mlp.fit(X_train_ser, Y_train)
-
-#output_path = path + 'Results_dense'
-y_test_pred = mlp.predict(X_test_ser)
-
-#clr_triangular = CyclicLR(mode='triangular', base_lr=1e-7, max_lr=1e-3,
+output_path = path + 'Results_lstmcorr1'
+model = RecComModel()
+clr_triangular = CyclicLR(mode='triangular', base_lr=1e-6, max_lr=1e-3,
         step_size= 4 * (X_train.shape[0] // 256))
-#c = [clr_triangular, ModelCheckpoint(filepath= output_path +'/best_model.h5', monitor='val_loss', save_best_only=True)]
-#model.compile(optimizer=optimizers.Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
+
+c=[clr_triangular, ModelCheckpoint(filepath= output_path +'/best_model.h5',
+    monitor='val_loss', save_best_only=True)]
+model.compile(optimizer=optimizers.Adam(1e-6), loss='categorical_crossentropy', metrics=['accuracy'])
 
 
 Train = True
 if Train:
-    history = model.fit(X_train_ser, Y_train, epochs = 500, batch_size = 256,
-            callbacks = c, validation_data=(X_val_ser, Y_val))
+    #tuner.search(X_train, Y_train, epochs=100, ba)
+    history = model.fit(X_train, Y_train, epochs = 100, batch_size = 256, callbacks = c, validation_data=(X_val, Y_val))
     with open(output_path +'/history_rnn.json', 'w') as f:
         json.dump(history.history, f)
     model_json = model.to_json()
@@ -195,18 +173,31 @@ def getFontColor(value):
         return "black"
     else:
         return "white"
-signal_class = {classes[0]: np.zeros(17), classes[1]: np.zeros(17),classes[2]:np.zeros(17), classes[3] : np.zeros(17), classes[4]: np.zeros(17), classes[5]:np.zeros(17), classes[6]:np.zeros(17)}
+signal_class = {classes[0]: np.zeros(17), classes[1]:
+        np.zeros(17),classes[2]:np.zeros(17), classes[3] : np.zeros(17),
+        classes[4]: np.zeros(17), classes[5]:np.zeros(17),
+        classes[6]:np.zeros(17), classes[7]:np.zeros(17),
+        classes[8]:np.zeros(17), classes[9]:np.zeros(17),
+        classes[10]:np.zeros(17), classes[11]:np.zeros(17),
+        classes[12]:np.zeros(17), classes[13]:np.zeros(17),
+        classes[14]:np.zeros(17), classes[15]:np.zeros(17),
+        classes[16]:np.zeros(17),  classes[17]:np.zeros(17),
+        classes[18]:np.zeros(17), classes[19]:np.zeros(17),
+        classes[20]:np.zeros(17), classes[21]:np.zeros(17), classes[22]:np.zeros(17)}
 acc={}
 snrs = [-12,-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20]
 
 for j,snr in enumerate(snrs):
-    test_SNRs = list(map(lambda x: lbl_test[x][1], range(0,X_test_ser.shape[0])))
-    test_X_i = X_test_ser[[i for i,x in enumerate(test_SNRs) if x==snr]]
+    test_SNRs = list(map(lambda x: lbl_test[x][1], range(0,X_test.shape[0])))
+    test_X_i = X_test[[i for i,x in enumerate(test_SNRs) if x==snr]]
     test_Y_i = Y_test[[i for i,x in enumerate(test_SNRs) if x==snr]]
 
     # estimate classes
     test_Y_i_hat = np.array(model.predict(test_X_i))
     cm = confusion_matrix(np.argmax(test_Y_i, 1), np.argmax(test_Y_i_hat,1))
+    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = np.nan_to_num(cm_norm)
+    cm = np.round(cm_norm,2)
     cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
     cm_norm = np.nan_to_num(cm_norm)
     cm = np.round(cm_norm,2)
@@ -250,5 +241,3 @@ for i in range(len(classes)):
     plt.plot(snrs, signal_class[classes[i]])
 plt.legend(classes)
 plt.xlabel("Signal to Noise Ratio")
-plt.ylabel("Classification Accuracy")
-plt.savefig(output_path+ '/graphs/signal_accuracy.pdf')
